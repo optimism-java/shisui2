@@ -8,7 +8,7 @@ GOBIN = ./build/bin
 GO ?= latest
 GORUN = go run
 
-GIT_COMMIT := $(shell git rev-parse HEAD)
+GIT_COMMIT := $(shell git rev-parse --short=8 HEAD)
 GIT_DATE := $(shell git log -1 --format=%ci | cut -d ' ' -f 1)
 
 #? shisui: Build shisui
