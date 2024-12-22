@@ -28,6 +28,7 @@ type gnetConn struct {
 	eng        gnet.Engine
 	closeChan  chan struct{}
 	packetChan chan packet
+	startChan  chan struct{}
 }
 
 func NewGnetConn(log log.Logger) *gnetConn {
@@ -35,6 +36,7 @@ func NewGnetConn(log log.Logger) *gnetConn {
 		log:        log,
 		closeChan:  make(chan struct{}),
 		packetChan: make(chan packet, 1024),
+		startChan:  make(chan struct{}),
 	}
 }
 
@@ -43,11 +45,15 @@ func (gc *gnetConn) ListenUDP(ctx context.Context, addr string) error {
 	if err != nil {
 		return err
 	}
+	if udpAddr.IP == nil {
+		udpAddr.IP = net.IPv4zero // Use IPv4 0.0.0.0 explicitly
+	}
 	gc.localAddr = udpAddr
 
 	go func() {
 		panic(gnet.Run(gc, "udp://"+addr))
 	}()
+	<-gc.startChan
 	return nil
 }
 
@@ -62,14 +68,15 @@ func (gc *gnetConn) OnTraffic(c gnet.Conn) gnet.Action {
 	}
 
 	dst := make([]byte, len(data))
+	copy(dst, data)
+	packet.n = len(dst)
 	packet.data = dst
-	packet.n = len(data)
 	remote := c.RemoteAddr().(*net.UDPAddr)
 	packet.addr = netip.AddrPortFrom(
 		netip.AddrFrom4([4]byte(remote.IP.To4())),
 		uint16(remote.Port),
 	)
-	copy(dst, data)
+	gc.packetChan <- packet
 
 	return gnet.None
 }
@@ -90,7 +97,7 @@ func (gc *gnetConn) OnBoot(eng gnet.Engine) gnet.Action {
 
 	udpConn := conn.(*net.UDPConn)
 	gc.conn = udpConn
-
+	gc.startChan <- struct{}{}
 	return gnet.None
 }
 
